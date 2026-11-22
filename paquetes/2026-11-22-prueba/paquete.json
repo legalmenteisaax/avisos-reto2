@@ -1,1 +1,0 @@
-{ "para": "Isaac", "titulo": "Prueba del sistema de paquetes (no subir)", "resumen": "Esto es solo una prueba para ver cómo le llega a cada integrante su cambio. No hay que subir nada.", "mensaje_commit": "crea la carpeta documentos con su explicacion", "rol": "Apoyo técnico", "archivos": [ { "ruta": "documentos/README.md", "sha_base": null } ] }
