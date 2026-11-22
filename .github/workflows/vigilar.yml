@@ -1,0 +1,49 @@
+name: Vigilar el Reto 2
+
+# Cada 30 minutos revisa si alguien subió cambios al repo del equipo y avisa por Telegram.
+# Los domingos en la noche manda el resumen de la semana.
+on:
+  schedule:
+    - cron: "*/30 * * * *"
+    - cron: "13 0 * * 1" # domingo 7:13 p. m. hora de Colombia
+  workflow_dispatch:
+    inputs:
+      modo:
+        description: "cambios o semana"
+        default: "cambios"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: vigilar
+  cancel-in-progress: false
+
+jobs:
+  vigilar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      # Guarda el último commit revisado entre una corrida y otra
+      - uses: actions/cache@v4
+        with:
+          path: estado
+          key: estado-${{ github.run_id }}
+          restore-keys: estado-
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Revisar y avisar
+        run: node vigilar.mjs ${{ github.event.schedule == '13 0 * * 1' && 'semana' || inputs.modo || 'cambios' }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+          IA_URL: ${{ secrets.IA_URL }}
+          IA_KEY: ${{ secrets.IA_KEY }}
+          IA_MODELO: ${{ secrets.IA_MODELO }}
