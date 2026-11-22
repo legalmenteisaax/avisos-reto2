@@ -1,20 +1,31 @@
 {
-  "_comentario": "Personas del equipo. 'telegram' es su @usuario (sin @) para mencionarlo; 'github' son los nombres o correos con los que aparece en los commits.",
+  "_comentario": "Personas del equipo. 'telegram' es su @usuario (sin @) para mencionarlo; 'github' son los nombres o correos con los que aparece en los commits; 'rol' (opcional) es su rol en el equipo.",
   "personas": [
     {
       "nombre": "Isaac",
       "telegram": "legalmenteisaax",
-      "github": ["legalmenteisaax", "¡saax", "105462625+legalmenteisaax@users.noreply.github.com", "legalmenteisaax@users.noreply.github.com"]
+      "github": [
+        "legalmenteisaax",
+        "¡saax",
+        "105462625+legalmenteisaax@users.noreply.github.com",
+        "legalmenteisaax@users.noreply.github.com"
+      ]
     },
     {
       "nombre": "Cristian",
       "telegram": "Cristian_Ypez",
-      "github": ["Cristian_Ypez"]
+      "github": [
+        "Cristian_Ypez"
+      ]
     },
     {
       "nombre": "Angel",
       "telegram": "",
-      "github": ["angel florez", "lilangel-stack", "santiagoflorezsalazar@gmail.com"]
+      "github": [
+        "angel florez",
+        "lilangel-stack",
+        "santiagoflorezsalazar@gmail.com"
+      ]
     }
   ]
 }

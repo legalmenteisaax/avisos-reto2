@@ -84,6 +84,24 @@ function describirArchivos(archivos) {
   return [...partes.entries()].map(([que, rol]) => `• ${que} (${rol})`).join("\n");
 }
 
+// Roles de las partes que tocó alguien, sin repetir
+function rolesDe(archivos) {
+  const roles = new Set();
+  for (const archivo of archivos) roles.add((PARTES.find(([patron]) => patron.test(archivo)) ?? [null, null, "Sin rol"])[2]);
+  return [...roles];
+}
+
+// Una línea corta con las partes tocadas: "el mapa, los filtros y 3 más"
+function partesCortas(archivos) {
+  const partes = [...new Set(archivos.map((a) => (PARTES.find(([patron]) => patron.test(a)) ?? [null, a])[1]))];
+  if (partes.length <= 3) return partes.join(", ");
+  return `${partes.slice(0, 3).join(", ")} y ${partes.length - 3} más`;
+}
+
+// Bloque que en Telegram aparece cerrado y se abre al tocarlo
+const plegable = (encabezado, lineas) =>
+  `<blockquote expandable><b>${escaparHTML(encabezado)}</b>\n${lineas.map(escaparHTML).join("\n")}</blockquote>`;
+
 // ---------- IA opcional (cualquier servicio compatible con OpenAI) ----------
 async function explicarConIA(instruccion, contenido) {
   const { IA_URL, IA_KEY, IA_MODELO } = process.env;
@@ -114,9 +132,9 @@ async function explicarConIA(instruccion, contenido) {
 // ---------- Envío ----------
 const escaparHTML = (t) => t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
-async function enviar({ titulo, cuerpo, enlace, textoEnlace }) {
+async function enviar({ titulo, cuerpo, cuerpoHTML, enlace, textoEnlace }) {
   const telegram =
-    `<b>${escaparHTML(titulo)}</b>\n\n${escaparHTML(cuerpo)}` +
+    `<b>${escaparHTML(titulo)}</b>\n\n${cuerpoHTML ?? escaparHTML(cuerpo)}` +
     (enlace ? `\n\n<a href="${enlace}">${escaparHTML(textoEnlace)}</a>` : "");
   const discord = `**${titulo}**\n\n${cuerpo}` + (enlace ? `\n\n[${textoEnlace}](<${enlace}>)` : "");
   if (PRUEBA) {
@@ -188,9 +206,16 @@ async function revisarCambios() {
         `Commits:\n${mensajes}\n\nCambios:\n${parches}`,
       );
       const plural = lista.length === 1 ? "un cambio" : `${lista.length} cambios`;
+      const corto = explicacion || `Tocó ${partesCortas(archivos) || "el proyecto"}.`;
+      const detalle = [
+        ...lista.map((c) => `• ${c.commit.message.split("\n")[0]}`),
+        "",
+        `Partes de los roles: ${rolesDe(archivos).join(", ") || "—"}`,
+      ];
       await enviar({
         titulo: `🔔 ${quien} subió ${plural} al proyecto`,
-        cuerpo: explicacion || `Lo que dice el cambio:\n${mensajes}\n\nPartes del proyecto que tocó:\n${describirArchivos(archivos) || "—"}`,
+        cuerpo: `${corto}\n\n${mensajes}\n\nPartes del proyecto que tocó:\n${describirArchivos(archivos) || "—"}`,
+        cuerpoHTML: `${escaparHTML(corto)}\n\n${plegable("Ver los cambios", detalle)}`,
         enlace: `${URL_REPO}/compare/${anterior.slice(0, 7)}...${cabeza.slice(0, 7)}`,
         textoEnlace: "Ver el cambio en GitHub",
       });
@@ -217,36 +242,51 @@ async function resumirDia() {
     .reverse(); // del más viejo al más nuevo
 
   // Todas las personas aparecen, hayan hecho cambios o no
-  const filas = new Map(personas.map((p) => [conArroba(p), []]));
+  const filas = new Map(personas.map((p) => [conArroba(p), { p, mensajes: [], archivos: new Set() }]));
   const archivos = new Set();
   for (const c of commits) {
-    const quien = conArroba(persona(c.commit.author?.name, c.commit.author?.email, c.author?.login));
-    if (!filas.has(quien)) filas.set(quien, []);
-    filas.get(quien).push(c.commit.message.split("\n")[0]);
-    for (const f of (await gh(`/commits/${c.sha}`)).files || []) archivos.add(f.filename);
+    const p = persona(c.commit.author?.name, c.commit.author?.email, c.author?.login);
+    const quien = conArroba(p);
+    if (!filas.has(quien)) filas.set(quien, { p, mensajes: [], archivos: new Set() });
+    const fila = filas.get(quien);
+    fila.mensajes.push(c.commit.message.split("\n")[0]);
+    for (const f of (await gh(`/commits/${c.sha}`)).files || []) {
+      archivos.add(f.filename);
+      fila.archivos.add(f.filename);
+    }
   }
+  const ordenadas = [...filas.entries()].sort((a, b) => b[1].mensajes.length - a[1].mensajes.length);
+  const cuantos = (n) => (n === 1 ? "1 cambio" : `${n} cambios`);
 
-  const ordenadas = [...filas.entries()].sort((a, b) => b[1].length - a[1].length);
-  const bloques = ordenadas.map(([quien, mensajes]) => {
-    if (mensajes.length === 0) return `👤 ${quien} — sin cambios hoy`;
-    const cuantos = mensajes.length === 1 ? "1 cambio" : `${mensajes.length} cambios`;
-    return `👤 ${quien} — ${cuantos}\n${mensajes.map((m) => `   • ${m}`).join("\n")}`;
-  });
-
-  let descripcion;
+  // Resumen corto de arriba
+  const conCambios = ordenadas.filter(([, f]) => f.mensajes.length);
+  let corto;
   if (commits.length === 0) {
-    descripcion = "Hoy nadie subió cambios al proyecto.";
+    corto = "Hoy nadie subió cambios al proyecto.";
   } else {
     const ia = await explicarConIA(
-      `Resume en 2 a 4 frases sencillas, en español de Colombia y sin palabras técnicas, qué avanzó hoy el proyecto. No inventes nada.`,
-      ordenadas.filter(([, m]) => m.length).map(([q, m]) => `${q}:\n${m.join("\n")}`).join("\n\n"),
+      `Resume en 1 o 2 frases muy cortas, en español de Colombia y sin palabras técnicas, qué avanzó hoy el proyecto. No inventes nada.`,
+      conCambios.map(([q, f]) => `${q}:\n${f.mensajes.join("\n")}`).join("\n\n"),
     );
-    descripcion = (ia ? ia + "\n\n" : "") + `Partes del proyecto que se tocaron hoy:\n${describirArchivos([...archivos])}`;
+    corto =
+      ia ||
+      `Hoy hubo ${cuantos(commits.length)} de ${conCambios.length === 1 ? "1 persona" : `${conCambios.length} personas`}. Se tocó ${partesCortas([...archivos])}.`;
   }
+
+  // Un bloque plegable por persona: sus cambios y el rol de lo que tocó
+  const bloquesHTML = ordenadas.map(([quien, f]) => {
+    if (f.mensajes.length === 0) return `👤 ${escaparHTML(quien)} — sin cambios hoy`;
+    const rol = f.p.rol ? `Rol: ${f.p.rol}` : `Partes de los roles: ${rolesDe([...f.archivos]).join(", ") || "—"}`;
+    return plegable(`👤 ${quien} — ${cuantos(f.mensajes.length)}`, [...f.mensajes.map((m) => `• ${m}`), "", rol]);
+  });
+  const bloquesTexto = ordenadas.map(([quien, f]) =>
+    f.mensajes.length ? `👤 ${quien} — ${cuantos(f.mensajes.length)}\n${f.mensajes.map((m) => `   • ${m}`).join("\n")}` : `👤 ${quien} — sin cambios hoy`,
+  );
 
   await enviar({
     titulo: `📋 Resumen del día — ${fecha}`,
-    cuerpo: `${bloques.join("\n\n")}\n\n📝 Descripción\n${descripcion}`,
+    cuerpo: `${corto}\n\n${bloquesTexto.join("\n\n")}`,
+    cuerpoHTML: `${escaparHTML(corto)}\n\n${bloquesHTML.join("\n")}`,
     enlace: `${URL_REPO}/commits/${RAMA}`,
     textoEnlace: "Ver todo el historial",
   });
