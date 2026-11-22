@@ -1,0 +1,47 @@
+name: Entregar paquetes
+
+# Cuando se guarda un paquete nuevo en paquetes/<id>/, el bot lo manda por Telegram
+# a la persona que debe subirlo, con el zip, la guía y el mensaje del commit.
+on:
+  push:
+    branches: [main]
+    paths: ["paquetes/**/paquete.json"]
+  workflow_dispatch:
+    inputs:
+      paquete:
+        description: "Ruta del paquete a reenviar, por ejemplo paquetes/2026-11-22-resumen/paquete.json"
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  entregar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Buscar paquetes nuevos y entregarlos
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          ANTES: ${{ github.event.before }}
+          REENVIAR: ${{ inputs.paquete }}
+        run: |
+          if [ -n "$REENVIAR" ]; then
+            lista="$REENVIAR"
+          elif [ -z "$ANTES" ] || [ "$ANTES" = "0000000000000000000000000000000000000000" ]; then
+            lista=$(git ls-files 'paquetes/*/paquete.json')
+          else
+            lista=$(git diff --name-only --diff-filter=A "$ANTES" HEAD -- 'paquetes/*/paquete.json')
+          fi
+          if [ -z "$lista" ]; then echo "No hay paquetes nuevos."; exit 0; fi
+          node entregar.mjs $lista
