@@ -9,28 +9,43 @@
         "¡saax",
         "105462625+legalmenteisaax@users.noreply.github.com",
         "legalmenteisaax@users.noreply.github.com"
-      ]
+      ],
+      "rol": "5 · Ingeniero de metodología"
     },
     {
       "nombre": "Cristian",
       "telegram": "Cristian_Ypez",
       "github": [
-        "Cristian_Ypez"
-      ]
+        "Cristian_Ypez",
+        "cristianyepez168-sudo"
+      ],
+      "rol": "2 · Analista de campo y privacidad"
     },
     {
       "nombre": "Angel",
-      "telegram": "",
+      "telegram": "lil_angel122",
       "github": [
         "angel florez",
         "lilangel-stack",
         "santiagoflorezsalazar@gmail.com"
-      ]
+      ],
+      "rol": "1 · Integrador del mapa e infraestructura"
     },
     {
       "nombre": "Ali",
       "telegram": "Ali_two2",
-      "github": []
+      "github": [
+        "ambi788"
+      ],
+      "rol": "4 · Diseñador de interfaz y documentación"
+    },
+    {
+      "nombre": "Andrés",
+      "telegram": "DandelionFx",
+      "github": [
+        "NoCodename12"
+      ],
+      "rol": "3 · Ingeniero de lógica y clasificación"
     }
   ]
 }
