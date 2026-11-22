@@ -183,7 +183,9 @@ async function revisarCambios() {
     }
   }
 
-  if (!PRUEBA && process.exitCode !== 1) {
+  // Solo se guarda el avance cuando hay a dónde avisar; así el primer aviso real no se pierde.
+  const hayCanal = (process.env.TELEGRAM_TOKEN && process.env.TELEGRAM_CHAT_ID) || process.env.DISCORD_WEBHOOK;
+  if (!PRUEBA && hayCanal && process.exitCode !== 1) {
     fs.mkdirSync(ESTADO.split("/").slice(0, -1).join("/") || ".", { recursive: true });
     fs.writeFileSync(ESTADO, cabeza + "\n");
   }
