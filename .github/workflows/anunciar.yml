@@ -1,0 +1,31 @@
+name: Anunciar tareas
+
+# Cuando se agrega un archivo en anuncios/, el bot lo publica en el grupo de Telegram.
+on:
+  push:
+    branches: [main]
+    paths: ["anuncios/*.json"]
+
+permissions:
+  contents: read
+
+jobs:
+  anunciar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Publicar anuncios nuevos
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          ANTES: ${{ github.event.before }}
+        run: |
+          lista=$(git diff --name-only --diff-filter=A "$ANTES" HEAD -- 'anuncios/*.json' 2>/dev/null || git ls-files 'anuncios/*.json')
+          if [ -z "$lista" ]; then echo "No hay anuncios nuevos."; exit 0; fi
+          node anunciar.mjs $lista
