@@ -103,8 +103,30 @@ async function explicarConIA(instruccion, contenido) {
 // ---------- Envío ----------
 const escaparHTML = (t) => t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
+// Etiquetas: cada persona de etiquetas.json recibe una mención en el aviso de Telegram.
+function etiquetasTelegram() {
+  let lista = [];
+  try {
+    lista = JSON.parse(fs.readFileSync(new URL("./etiquetas.json", import.meta.url), "utf8")).telegram || [];
+  } catch {}
+  return lista
+    .map((p) =>
+      p.usuario
+        ? `@${String(p.usuario).replace(/^@/, "")}`
+        : p.id
+          ? `<a href="tg://user?id=${Number(p.id)}">${escaparHTML(p.nombre || "integrante")}</a>`
+          : "",
+    )
+    .filter(Boolean)
+    .join(" ");
+}
+
 async function enviar({ titulo, cuerpo, enlace, textoEnlace }) {
-  const telegram = `<b>${escaparHTML(titulo)}</b>\n\n${escaparHTML(cuerpo)}` + (enlace ? `\n\n<a href="${enlace}">${escaparHTML(textoEnlace)}</a>` : "");
+  const etiquetas = etiquetasTelegram();
+  const telegram =
+    `<b>${escaparHTML(titulo)}</b>\n\n${escaparHTML(cuerpo)}` +
+    (enlace ? `\n\n<a href="${enlace}">${escaparHTML(textoEnlace)}</a>` : "") +
+    (etiquetas ? `\n\n👥 ${etiquetas}` : "");
   const discord = `**${titulo}**\n\n${cuerpo}` + (enlace ? `\n\n[${textoEnlace}](<${enlace}>)` : "");
   if (PRUEBA) {
     console.log("---- Telegram ----\n" + telegram + "\n");

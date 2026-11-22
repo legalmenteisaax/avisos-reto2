@@ -1,0 +1,7 @@
+{
+  "_comentario": "Usuarios de Telegram que se etiquetan en cada aviso. Para alguien sin @usuario, usa \"id\" con su número de Telegram.",
+  "telegram": [
+    { "nombre": "Isaac", "usuario": "legalmenteisaax" },
+    { "nombre": "Cristian", "usuario": "Cristian_Ypez" }
+  ]
+}
