@@ -1,6 +1,6 @@
 # Avisos del Reto 2
 
-Revisa cada 30 minutos el repositorio del equipo y avisa por Telegram (y Discord, si se configura) cada cambio que alguien sube, explicado en palabras simples. Los domingos en la noche manda el resumen de la semana.
+Revisa cada 30 minutos el repositorio del equipo y avisa por Telegram (y Discord, si se configura) cada cambio que alguien sube, explicado en palabras simples. Cada noche, a las 11 p. m., manda el resumen del día con cada integrante mencionado.
 
 ## Configuración
 

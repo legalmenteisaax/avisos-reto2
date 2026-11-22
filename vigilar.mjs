@@ -3,7 +3,7 @@
 //
 // Modos:
 //   node vigilar.mjs cambios   -> busca commits nuevos desde la última revisión
-//   node vigilar.mjs semana    -> resumen de los últimos 7 días
+//   node vigilar.mjs dia       -> resumen del día (se corre en la noche)
 //   PRUEBA=1 ...               -> no envía nada, solo imprime
 import fs from "node:fs";
 
@@ -37,13 +37,24 @@ async function cargarEquipo() {
 }
 const equipo = await cargarEquipo();
 
+let personas = [];
+try {
+  personas = JSON.parse(fs.readFileSync(new URL("./etiquetas.json", import.meta.url), "utf8")).personas || [];
+} catch {}
+
+// Busca a la persona de un commit por su nombre, correo o usuario de GitHub.
 function persona(nombre, correo, login) {
-  const clave = (correo || "").toLowerCase();
-  const p = equipo.integrantes.find(
-    (i) => (i.correos || []).some((c) => c.toLowerCase() === clave) || (i.alias || []).includes(nombre) || (i.alias || []).includes(login),
+  const claves = [nombre, correo, login].filter(Boolean).map((c) => String(c).toLowerCase());
+  const p = personas.find((i) => (i.github || []).some((g) => claves.includes(String(g).toLowerCase())));
+  if (p) return p;
+  const e = (equipo.integrantes || []).find(
+    (i) => (i.correos || []).some((c) => claves.includes(c.toLowerCase())) || (i.alias || []).some((a) => claves.includes(a.toLowerCase())),
   );
-  return p?.nombre || nombre || login || "Alguien";
+  return { nombre: e?.nombre || nombre || login || "Alguien", telegram: "" };
 }
+
+// "Isaac @legalmenteisaax" o solo "Angel" si no tiene Telegram
+const conArroba = (p) => (p.telegram ? `${p.nombre} @${String(p.telegram).replace(/^@/, "")}` : p.nombre);
 
 // ---------- Qué es cada archivo, en palabras simples ----------
 const PARTES = [
@@ -103,30 +114,10 @@ async function explicarConIA(instruccion, contenido) {
 // ---------- Envío ----------
 const escaparHTML = (t) => t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
-// Etiquetas: cada persona de etiquetas.json recibe una mención en el aviso de Telegram.
-function etiquetasTelegram() {
-  let lista = [];
-  try {
-    lista = JSON.parse(fs.readFileSync(new URL("./etiquetas.json", import.meta.url), "utf8")).telegram || [];
-  } catch {}
-  return lista
-    .map((p) =>
-      p.usuario
-        ? `@${String(p.usuario).replace(/^@/, "")}`
-        : p.id
-          ? `<a href="tg://user?id=${Number(p.id)}">${escaparHTML(p.nombre || "integrante")}</a>`
-          : "",
-    )
-    .filter(Boolean)
-    .join(" ");
-}
-
 async function enviar({ titulo, cuerpo, enlace, textoEnlace }) {
-  const etiquetas = etiquetasTelegram();
   const telegram =
     `<b>${escaparHTML(titulo)}</b>\n\n${escaparHTML(cuerpo)}` +
-    (enlace ? `\n\n<a href="${enlace}">${escaparHTML(textoEnlace)}</a>` : "") +
-    (etiquetas ? `\n\n👥 ${etiquetas}` : "");
+    (enlace ? `\n\n<a href="${enlace}">${escaparHTML(textoEnlace)}</a>` : "");
   const discord = `**${titulo}**\n\n${cuerpo}` + (enlace ? `\n\n[${textoEnlace}](<${enlace}>)` : "");
   if (PRUEBA) {
     console.log("---- Telegram ----\n" + telegram + "\n");
@@ -165,7 +156,7 @@ async function revisarCambios() {
     // Primera vez: se guarda el punto de partida y se avisa que quedó conectado, sin repetir el historial viejo.
     await enviar({
       titulo: "✅ Avisos del Reto 2 conectados",
-      cuerpo: "Desde ahora, cada vez que alguien suba un cambio al proyecto, llega un aviso aquí. Los domingos en la noche llega el resumen de la semana.",
+      cuerpo: "Desde ahora, cada vez que alguien suba un cambio al proyecto, llega un aviso aquí. Cada noche llega el resumen del día.",
       enlace: `${URL_REPO}/commits/${RAMA}`,
       textoEnlace: "Ver el historial del proyecto",
     });
@@ -178,7 +169,8 @@ async function revisarCambios() {
     const porPersona = new Map();
     for (const c of commits) {
       if ((c.parents || []).length > 1) continue; // merges
-      const quien = persona(c.commit.author?.name, c.commit.author?.email, c.author?.login);
+      const p = persona(c.commit.author?.name, c.commit.author?.email, c.author?.login);
+      const quien = conArroba(p);
       if (!porPersona.has(quien)) porPersona.set(quien, []);
       porPersona.get(quien).push(c);
     }
@@ -213,22 +205,51 @@ async function revisarCambios() {
   }
 }
 
-// ---------- Resumen de la semana ----------
-async function resumirSemana() {
-  const desde = new Date(Date.now() - 7 * 864e5).toISOString();
-  const commits = (await gh(`/commits?sha=${RAMA}&since=${desde}&per_page=100`)).filter((c) => (c.parents || []).length < 2);
-  const porPersona = new Map();
+// ---------- Resumen del día ----------
+// Se corre en la noche. Cuenta los commits desde la medianoche de Colombia (UTC-5).
+async function resumirDia() {
+  const ahoraCol = new Date(Date.now() - 5 * 3600e3);
+  const inicio = process.env.DESDE || new Date(Date.UTC(ahoraCol.getUTCFullYear(), ahoraCol.getUTCMonth(), ahoraCol.getUTCDate(), 5)).toISOString();
+  const fecha = new Date(inicio).toLocaleDateString("es-CO", { weekday: "long", day: "numeric", month: "long", timeZone: "America/Bogota" });
+
+  const commits = (await gh(`/commits?sha=${RAMA}&since=${inicio}&per_page=100`))
+    .filter((c) => (c.parents || []).length < 2)
+    .reverse(); // del más viejo al más nuevo
+
+  // Todas las personas aparecen, hayan hecho cambios o no
+  const filas = new Map(personas.map((p) => [conArroba(p), []]));
+  const archivos = new Set();
   for (const c of commits) {
-    const quien = persona(c.commit.author?.name, c.commit.author?.email, c.author?.login);
-    porPersona.set(quien, (porPersona.get(quien) || 0) + 1);
+    const quien = conArroba(persona(c.commit.author?.name, c.commit.author?.email, c.author?.login));
+    if (!filas.has(quien)) filas.set(quien, []);
+    filas.get(quien).push(c.commit.message.split("\n")[0]);
+    for (const f of (await gh(`/commits/${c.sha}`)).files || []) archivos.add(f.filename);
   }
-  const conteo = [...porPersona.entries()].map(([q, n]) => `• ${q}: ${n} cambio(s)`).join("\n");
-  const sinAportes = equipo.integrantes.map((p) => p.nombre).filter((n) => !porPersona.has(n));
-  const cuerpo = [
-    commits.length ? conteo : "Esta semana nadie subió cambios al proyecto.",
-    sinAportes.length ? `Sin cambios esta semana: ${sinAportes.join(", ")}. Recuerden que el profesor revisa el historial de cada uno.` : "",
-  ].filter(Boolean).join("\n\n");
-  await enviar({ titulo: "📋 Resumen de la semana", cuerpo, enlace: `${URL_REPO}/commits/${RAMA}`, textoEnlace: "Ver todo el historial" });
+
+  const ordenadas = [...filas.entries()].sort((a, b) => b[1].length - a[1].length);
+  const bloques = ordenadas.map(([quien, mensajes]) => {
+    if (mensajes.length === 0) return `👤 ${quien} — sin cambios hoy`;
+    const cuantos = mensajes.length === 1 ? "1 cambio" : `${mensajes.length} cambios`;
+    return `👤 ${quien} — ${cuantos}\n${mensajes.map((m) => `   • ${m}`).join("\n")}`;
+  });
+
+  let descripcion;
+  if (commits.length === 0) {
+    descripcion = "Hoy nadie subió cambios al proyecto.";
+  } else {
+    const ia = await explicarConIA(
+      `Resume en 2 a 4 frases sencillas, en español de Colombia y sin palabras técnicas, qué avanzó hoy el proyecto. No inventes nada.`,
+      ordenadas.filter(([, m]) => m.length).map(([q, m]) => `${q}:\n${m.join("\n")}`).join("\n\n"),
+    );
+    descripcion = (ia ? ia + "\n\n" : "") + `Partes del proyecto que se tocaron hoy:\n${describirArchivos([...archivos])}`;
+  }
+
+  await enviar({
+    titulo: `📋 Resumen del día — ${fecha}`,
+    cuerpo: `${bloques.join("\n\n")}\n\n📝 Descripción\n${descripcion}`,
+    enlace: `${URL_REPO}/commits/${RAMA}`,
+    textoEnlace: "Ver todo el historial",
+  });
 }
 
-await (MODO === "semana" ? resumirSemana() : revisarCambios());
+await (MODO === "dia" ? resumirDia() : revisarCambios());
